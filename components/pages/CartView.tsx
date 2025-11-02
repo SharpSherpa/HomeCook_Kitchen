@@ -43,7 +43,7 @@ const CartView: React.FC<CartViewProps> = ({ onCheckout, onBrowseMenu }) => {
                   <img src={item.imageUrl} alt={item.name} className="w-20 h-20 object-cover rounded-md" />
                   <div className="flex-grow">
                     <h3 className="font-semibold text-gray-800 dark:text-gray-200">{item.name}</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">₹{item.price.toFixed(2)}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">₹ {item.price.toFixed(2)}</p>
                     <div className="flex items-center mt-2">
                        <QuantityControl
                           quantity={quantity}
@@ -53,7 +53,7 @@ const CartView: React.FC<CartViewProps> = ({ onCheckout, onBrowseMenu }) => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-gray-800 dark:text-gray-200">₹{(item.price * quantity).toFixed(2)}</p>
+                    <p className="font-semibold text-gray-800 dark:text-gray-200">₹ {(item.price * quantity).toFixed(2)}</p>
                     <button onClick={() => removeItem(item.id)} className="text-red-500 hover:text-red-700 mt-2">
                         <IconTrash/>
                     </button>
@@ -65,7 +65,7 @@ const CartView: React.FC<CartViewProps> = ({ onCheckout, onBrowseMenu }) => {
             <div className="p-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
               <div className="flex justify-between text-lg font-semibold text-gray-800 dark:text-gray-200">
                 <span>Subtotal</span>
-                <span>₹{totalPrice.toFixed(2)}</span>
+                <span>₹ {totalPrice.toFixed(2)}</span>
               </div>
               <Button onClick={handleCheckout} className="w-full text-lg">
                 Proceed to Checkout

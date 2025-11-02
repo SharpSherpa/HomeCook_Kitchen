@@ -1,35 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { MenuItem, ContactInfo, MenuItemStatus, Order, OrderStatus, User, UserRole } from '../../types';
+import { MenuItem, ContactInfo, MenuItemStatus } from '../../types';
 import Button from '../Button';
 import { suggestDish } from '../../services/geminiService';
 import Spinner from '../Spinner';
-import { IconTrash } from '../../constants';
+import { RESTAURANT_NAME } from '../../constants';
 
 interface AdminDashboardProps {
   menuItems: MenuItem[];
   contactInfo: ContactInfo;
-  orders: Order[];
   onUpdateContactInfo: (info: ContactInfo) => Promise<void>;
   onUpdateMenuItem: (item: MenuItem) => Promise<void>;
   onAddMenuItem: (item: Omit<MenuItem, 'id'>) => Promise<void>;
-  onDeleteMenuItem: (id: number) => Promise<void>;
-  onUpdateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
-  users: User[];
-  isRootAdmin: boolean;
-  onAddAdmin: (mobileNumber: string, password: string) => Promise<void>;
-  onDeleteUser: (mobileNumber: string) => Promise<void>;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ menuItems, contactInfo, orders, onUpdateContactInfo, onUpdateMenuItem, onAddMenuItem, onDeleteMenuItem, onUpdateOrderStatus, users, isRootAdmin, onAddAdmin, onDeleteUser }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ menuItems, contactInfo, onUpdateContactInfo, onUpdateMenuItem, onAddMenuItem }) => {
   const [editableContactInfo, setEditableContactInfo] = useState(contactInfo);
   const [isEditingItem, setIsEditingItem] = useState<MenuItem | null>(null);
   
   const [ingredients, setIngredients] = useState('');
   const [suggestion, setSuggestion] = useState<{ dishName: string; description: string } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  
-  const [newAdminNumber, setNewAdminNumber] = useState('');
-  const [newAdminPassword, setNewAdminPassword] = useState('');
 
   useEffect(() => {
     setEditableContactInfo(contactInfo);
@@ -60,7 +50,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ menuItems, contactInfo,
 
   const handleSaveNewOrEditItem = async () => {
     if (isEditingItem) {
+        if (isEditingItem.name.trim() === '' || isEditingItem.description.trim() === '' || isEditingItem.category.trim() === '' || isEditingItem.price <= 0) {
+            alert("Please fill out all fields with valid values.");
+            return;
+        }
         if (isEditingItem.id === -1) { // Adding new item
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { id, ...newItemData } = isEditingItem;
             await onAddMenuItem(newItemData);
             setIsEditingItem(null);
@@ -70,18 +65,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ menuItems, contactInfo,
             setIsEditingItem(null);
             alert(`Item "${isEditingItem.name}" updated!`);
         }
-    }
-  };
-
-  const handleDeleteItem = async (item: MenuItem) => {
-    if (window.confirm(`Are you sure you want to delete "${item.name}"?`)) {
-      try {
-        await onDeleteMenuItem(item.id);
-        // Success is confirmed by the item disappearing from the list. No alert needed.
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "An unknown error occurred.";
-        alert(`Error: Could not delete item. ${message}`);
-      }
     }
   };
 
@@ -104,47 +87,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ menuItems, contactInfo,
     }
   };
   
-  const handleAddAdminSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // Strict frontend validation as requested.
-    if (newAdminNumber.length !== 10) {
-        alert('Mobile number must be 10 characters long.');
-        return;
-    }
-    if (newAdminPassword.length < 6) {
-        alert('Password must be at least 6 characters long.');
-        return;
-    }
-    
-    try {
-        await onAddAdmin(newAdminNumber, newAdminPassword);
-        setNewAdminNumber('');
-        setNewAdminPassword('');
-        alert('New admin user created successfully.');
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "An unknown error occurred.";
-        alert(`Error: ${message}`);
-    }
-  };
-
-  const handleDeleteUserClick = async (userToDelete: User) => {
-    if (window.confirm(`Are you sure you want to delete the user with mobile number ${userToDelete.mobileNumber}?`)) {
-      try {
-        await onDeleteUser(userToDelete.mobileNumber);
-        // Success is confirmed by the user disappearing from the list. No alert needed.
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "An unknown error occurred.";
-        alert(`Error: Could not delete user. ${message}`);
-      }
-    }
-  };
+  const isValidUpiId = editableContactInfo.upiId && editableContactInfo.upiId.includes('@');
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <h1 className="text-3xl font-bold mb-8">Admin Dashboard</h1>
 
       {isEditingItem && (
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-md mb-8">
+          <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-md mb-8 animate-fade-in">
               <h3 className="font-semibold text-lg mb-4">{isEditingItem.id === -1 ? 'Add New Item' : `Editing: ${isEditingItem.name}`}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <input value={isEditingItem.name} onChange={(e) => setIsEditingItem({...isEditingItem, name: e.target.value})} placeholder="Name" className="p-2 border rounded bg-transparent border-gray-300 dark:border-gray-700"/>
@@ -160,61 +110,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ menuItems, contactInfo,
           </div>
       )}
       
-      {/* User Management */}
-      {isRootAdmin && (
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-md mb-8">
-              <h2 className="text-2xl font-semibold mb-4">User Management</h2>
-              
-              <div className="mb-6 border-b dark:border-gray-700 pb-6">
-                  <h3 className="text-lg font-medium mb-2">Create New Admin User</h3>
-                  <form onSubmit={handleAddAdminSubmit} className="flex flex-col sm:flex-row items-center gap-4">
-                        <input 
-                            type="text"
-                            value={newAdminNumber}
-                            onChange={(e) => setNewAdminNumber(e.target.value.replace(/\D/g, ''))}
-                            placeholder="Enter 10-digit mobile number"
-                            maxLength={10}
-                            className="flex-grow p-2 border rounded bg-transparent border-gray-300 dark:border-gray-700 w-full sm:w-auto"
-                        />
-                        <input 
-                            type="password"
-                            value={newAdminPassword}
-                            onChange={(e) => setNewAdminPassword(e.target.value)}
-                            placeholder="Enter temporary password"
-                            className="flex-grow p-2 border rounded bg-transparent border-gray-300 dark:border-gray-700 w-full sm:w-auto"
-                        />
-                        <Button type="submit" className="w-full sm:w-auto">Create Admin</Button>
-                  </form>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">The new admin user will log in with the mobile number and password you provide.</p>
-              </div>
-
-              <h3 className="text-lg font-medium mb-2">All Users</h3>
-                <div className="space-y-2 overflow-x-auto">
-                  {users.map(user => (
-                    <div key={user.mobileNumber} className="grid grid-cols-4 gap-4 items-center p-3 border-b dark:border-gray-700">
-                      <div className="col-span-2 font-medium">{user.mobileNumber}</div>
-                      <div>
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                            user.role === UserRole.RootAdmin ? 'bg-yellow-200 text-yellow-800' :
-                            user.role === UserRole.Admin ? 'bg-blue-200 text-blue-800' :
-                            'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                        }`}>
-                            {user.role === UserRole.RootAdmin ? 'Root Admin' : user.role === UserRole.Admin ? 'Admin' : 'Customer'}
-                        </span>
-                      </div>
-                      <div className="flex justify-end">
-                        {user.role !== UserRole.RootAdmin && (
-                            <Button onClick={() => handleDeleteUserClick(user)} variant="danger" className="text-sm px-3 py-1">
-                                <IconTrash/>
-                            </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-          </div>
-      )}
-
       {/* Contact Info Management */}
       <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-md mb-8">
         <h2 className="text-2xl font-semibold mb-4">Contact Information</h2>
@@ -223,9 +118,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ menuItems, contactInfo,
           <input name="whatsapp" value={editableContactInfo.whatsapp} onChange={handleContactInfoChange} placeholder="WhatsApp" className="p-2 border rounded bg-transparent border-gray-300 dark:border-gray-700" />
           <input name="email" value={editableContactInfo.email} onChange={handleContactInfoChange} placeholder="Email" className="p-2 border rounded bg-transparent border-gray-300 dark:border-gray-700" />
           <input name="address" value={editableContactInfo.address} onChange={handleContactInfoChange} placeholder="Address" className="p-2 border rounded bg-transparent border-gray-300 dark:border-gray-700" />
-          <textarea name="mapEmbedUrl" value={editableContactInfo.mapEmbedUrl} onChange={handleContactInfoChange} placeholder="Google Maps Embed URL" className="p-2 border rounded md:col-span-2 h-24 bg-transparent border-gray-300 dark:border-gray-700" />
+          <input name="upiId" value={editableContactInfo.upiId} onChange={handleContactInfoChange} placeholder="UPI ID (e.g. yourname@bank)" className="p-2 border rounded bg-transparent border-gray-300 dark:border-gray-700" />
+          <textarea name="mapEmbedUrl" value={editableContactInfo.mapEmbedUrl} onChange={handleContactInfoChange} placeholder="Google Maps Embed URL" className="p-2 border rounded h-24 bg-transparent border-gray-300 dark:border-gray-700" />
         </div>
         <Button onClick={handleSaveContactInfo} className="mt-4">Save Contact Info</Button>
+
+        {isValidUpiId && (
+          <div className="mt-6 pt-6 border-t dark:border-gray-700">
+            <h3 className="text-lg font-semibold mb-2">UPI QR Code Preview</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">This QR code will be shown to customers for payment.</p>
+            <img 
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=${editableContactInfo.upiId}&pn=${RESTAURANT_NAME}`}
+              alt="UPI QR Code Preview"
+              className="w-40 h-40 rounded-lg bg-white p-2 shadow-md"
+            />
+          </div>
+        )}
       </div>
 
       {/* Gemini Dish Suggester */}
@@ -264,7 +172,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ menuItems, contactInfo,
           {menuItems.map(item => (
             <div key={item.id} className="grid grid-cols-5 gap-4 items-center p-3 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
               <div className="col-span-2 font-medium">{item.name}</div>
-              <div>₹{item.price.toFixed(2)}</div>
+              <div>₹ {item.price.toFixed(2)}</div>
               <div>
                 <select 
                     value={item.status} 
@@ -277,52 +185,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ menuItems, contactInfo,
               </div>
               <div className="flex gap-2 justify-end">
                 <Button onClick={() => { setIsEditingItem(item); window.scrollTo({ top: 0, behavior: 'smooth' }); }} variant="secondary" className="text-sm px-3 py-1">Edit</Button>
-                <Button onClick={() => handleDeleteItem(item)} variant="danger" className="text-sm px-3 py-1"><IconTrash/></Button>
               </div>
             </div>
           ))}
-        </div>
-      </div>
-
-      {/* Recent Orders */}
-      <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-md">
-        <h2 className="text-2xl font-semibold mb-4">Recent Orders</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="border-b-2 dark:border-gray-700">
-              <tr>
-                <th className="p-2">Order ID</th>
-                <th className="p-2">Customer</th>
-                <th className="p-2">Date</th>
-                <th className="p-2">Items</th>
-                <th className="p-2">Amount</th>
-                <th className="p-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map(order => (
-                <tr key={order.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <td className="p-2 font-mono text-sm">{order.id}</td>
-                  <td className="p-2">{order.user.mobileNumber}</td>
-                  <td className="p-2 text-sm">{new Date(order.timestamp).toLocaleString()}</td>
-                  <td className="p-2 text-sm">
-                    {order.items.map(ci => `${ci.quantity}x ${ci.item.name}`).join(', ')}
-                  </td>
-                  <td className="p-2 font-semibold">₹{order.totalAmount.toFixed(2)}</td>
-                  <td className="p-2">
-                    <select 
-                      value={order.status} 
-                      onChange={(e) => onUpdateOrderStatus(order.id, e.target.value as OrderStatus)}
-                      className="p-1 rounded text-sm bg-transparent border border-gray-300 dark:border-gray-600 focus:ring-orange-500"
-                    >
-                      {Object.values(OrderStatus).map(status => <option key={status} value={status}>{status}</option>)}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {orders.length === 0 && <p className="text-center p-4 text-gray-500 dark:text-gray-400">No orders yet.</p>}
         </div>
       </div>
     </div>
