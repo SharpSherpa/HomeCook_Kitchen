@@ -1,0 +1,5 @@
+{
+  "name": "Copy of HomeCook Cloud Kitchen",
+  "description": "A fully responsive web application for a home-based cloud kitchen named HomeCook. It allows customers to browse the menu, place orders, and make payments. The restaurant owner has an admin panel to manage the menu, contact details, and view orders.",
+  "requestFramePermissions": []
+}
