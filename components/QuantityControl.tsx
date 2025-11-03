@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { IconPlus, IconMinus } from '../constants';
+import { IconPlus, IconMinus } from '../constants.tsx';
 
 interface QuantityControlProps {
   quantity: number;

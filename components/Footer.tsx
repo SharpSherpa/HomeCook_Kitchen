@@ -1,6 +1,7 @@
+
 import React from 'react';
-import { ContactInfo, Page } from '../types';
-import { RESTAURANT_NAME } from '../constants';
+import { ContactInfo, Page } from '../types.ts';
+import { RESTAURANT_NAME } from '../constants.tsx';
 
 interface FooterProps {
   contactInfo: ContactInfo;

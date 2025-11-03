@@ -1,4 +1,3 @@
-
 export enum MenuItemStatus {
   Available = 'available',
   Unavailable = 'unavailable',
@@ -14,13 +13,17 @@ export interface MenuItem {
   status: MenuItemStatus;
 }
 
+export interface CartItem {
+  item: MenuItem;
+  quantity: number;
+}
+
 export interface ContactInfo {
   phone: string;
   whatsapp: string;
   email: string;
   address: string;
   mapEmbedUrl: string;
-  upiId: string;
 }
 
 export enum UserRole {
@@ -30,15 +33,8 @@ export enum UserRole {
 }
 
 export interface User {
-  username: string;
   mobileNumber: string;
   role: UserRole;
-}
-
-// FIX: Added CartItem interface to be used in the shopping cart.
-export interface CartItem {
-    item: MenuItem;
-    quantity: number;
 }
 
 // For backend simulation, not exposed to frontend state
@@ -46,9 +42,29 @@ export interface UserCredentials extends User {
     passwordHash: string; // In a real app, this would be a salted hash
 }
 
+export enum OrderStatus {
+    Placed = 'Placed',
+    Preparing = 'Preparing',
+    OutForDelivery = 'Out for Delivery',
+    Delivered = 'Delivered',
+    Cancelled = 'Cancelled',
+}
+
+export interface Order {
+    id: string;
+    user: User;
+    items: CartItem[];
+    totalAmount: number;
+    paymentMethod: string;
+    status: OrderStatus;
+    timestamp: string;
+}
+
+
 export enum Page {
   Home,
   Menu,
-  Pay,
+  Checkout,
+  OrderSuccess,
   Admin,
 }

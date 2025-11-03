@@ -1,125 +1,193 @@
 
-import { MenuItem, ContactInfo, User, UserRole, UserCredentials, CartItem } from '../types';
-import { MOCK_CONTACT_INFO } from '../constants';
+import { MenuItem, ContactInfo, User, UserRole, Order, OrderStatus, CartItem, UserCredentials } from '../types.ts';
+import { MOCK_MENU_ITEMS, MOCK_CONTACT_INFO } from '../constants.tsx';
 
-const ADMIN_MOBILE = '9999999999';
 const ADMIN_PASSWORD = 'AdMin786@12';
-const ADMIN_USERNAME = 'Owner';
 
 // --- SIMULATED DATABASE with localStorage persistence ---
-
 const initDB = () => {
   const menuItems = localStorage.getItem('homecook-menuItems');
   const contactInfo = localStorage.getItem('homecook-contactInfo');
+  const orders = localStorage.getItem('homecook-orders');
   const users = localStorage.getItem('homecook-users');
 
-  const rootAdmin: UserCredentials = {
-      username: ADMIN_USERNAME,
-      mobileNumber: ADMIN_MOBILE,
+  const defaultAdmin: UserCredentials = {
+      mobileNumber: '9999999999',
       passwordHash: ADMIN_PASSWORD, 
       role: UserRole.RootAdmin,
   };
   
   return {
-    menuItemsDB: menuItems ? JSON.parse(menuItems) : [],
+    menuItemsDB: menuItems ? JSON.parse(menuItems) : JSON.parse(JSON.stringify(MOCK_MENU_ITEMS)),
     contactInfoDB: contactInfo ? JSON.parse(contactInfo) : JSON.parse(JSON.stringify(MOCK_CONTACT_INFO)),
-    // Users DB is now for the admin. No need to persist this, as it's hardcoded.
-    usersDB: [rootAdmin], 
+    ordersDB: orders ? JSON.parse(orders) : [],
+    usersDB: users ? JSON.parse(users) : [defaultAdmin],
   };
 };
 
-// Use a single object as the source of truth for the database.
-const DB = initDB();
+let { menuItemsDB, contactInfoDB, ordersDB, usersDB } = initDB();
 
-const saveMenuDB = () => localStorage.setItem('homecook-menuItems', JSON.stringify(DB.menuItemsDB));
-const saveContactInfoDB = () => localStorage.setItem('homecook-contactInfo', JSON.stringify(DB.contactInfoDB));
+const saveMenuDB = () => localStorage.setItem('homecook-menuItems', JSON.stringify(menuItemsDB));
+const saveContactInfoDB = () => localStorage.setItem('homecook-contactInfo', JSON.stringify(contactInfoDB));
+const saveOrdersDB = () => localStorage.setItem('homecook-orders', JSON.stringify(ordersDB));
+const saveUsersDB = () => localStorage.setItem('homecook-users', JSON.stringify(usersDB));
+
 
 // --- HELPERS ---
-
 const simulateDelay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-// --- USER AUTHENTICATION API (ADMIN ONLY) ---
-
-export const loginUser = async (username: string, password: string): Promise<{user: User | null, error?: string}> => {
+// --- USER AUTHENTICATION API ---
+export const registerUser = async (mobileNumber: string, password: string): Promise<{user: User | null, error?: string}> => {
     await simulateDelay(400);
-
-    const adminUser = DB.usersDB.find((u: UserCredentials) => u.username === ADMIN_USERNAME);
-    
-    // Check if admin user exists, and if username and password match.
-    // If any part of the check fails, return the generic error message.
-    if (!adminUser || username !== ADMIN_USERNAME || adminUser.passwordHash !== password) {
-        return { user: null, error: "Either of Username or Password is wrong." };
+    if (usersDB.find((u: UserCredentials) => u.mobileNumber === mobileNumber)) {
+        return { user: null, error: "An account with this mobile number already exists." };
     }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { passwordHash, ...user } = adminUser;
+    const newUser: UserCredentials = {
+        mobileNumber,
+        passwordHash: password, // Plain text for simulation only
+        role: UserRole.Customer
+    };
+    usersDB.push(newUser);
+    saveUsersDB();
+    const { passwordHash, ...user } = newUser;
     return { user };
 };
 
 
-// --- MENU API ---
+export const loginUser = async (mobileNumber: string, password: string): Promise<{user: User | null, error?: string}> => {
+    await simulateDelay(400);
+    const foundUser = usersDB.find((u: UserCredentials) => u.mobileNumber === mobileNumber);
 
+    if (!foundUser) {
+        return { user: null, error: "No account found with this mobile number." };
+    }
+
+    // Simplified and correct password check for all user types.
+    // For customers, it checks their unique password.
+    // For admins, it checks against their assigned password.
+    if (foundUser.passwordHash !== password) {
+        return { user: null, error: "Incorrect password." };
+    }
+
+    const { passwordHash, ...user } = foundUser;
+    return { user };
+};
+
+export const fetchAllUsers = async (): Promise<User[]> => {
+    await simulateDelay(200);
+    return usersDB.map(({ passwordHash, ...user }: UserCredentials) => user);
+};
+
+export const addAdminUser = async (mobileNumber: string, password: string): Promise<User[]> => {
+    await simulateDelay(300);
+    if (usersDB.find((u: UserCredentials) => u.mobileNumber === mobileNumber)) {
+        throw new Error("An account with this mobile number already exists.");
+    }
+    const newAdmin: UserCredentials = {
+        mobileNumber,
+        passwordHash: password,
+        role: UserRole.Admin
+    };
+    usersDB = [...usersDB, newAdmin];
+    saveUsersDB();
+    return usersDB.map(({ passwordHash, ...user }: UserCredentials) => user);
+};
+
+export const deleteUser = async (mobileNumberToDelete: string): Promise<{ success: boolean }> => {
+    await simulateDelay(300);
+    const userToDelete = usersDB.find((u: UserCredentials) => u.mobileNumber === mobileNumberToDelete);
+    if (!userToDelete) {
+        throw new Error("User not found.");
+    }
+    if (userToDelete.role === UserRole.RootAdmin) {
+        throw new Error("The root admin account cannot be deleted.");
+    }
+    usersDB = usersDB.filter((u: UserCredentials) => u.mobileNumber !== mobileNumberToDelete);
+    saveUsersDB();
+    return { success: true };
+};
+
+
+// --- MENU API ---
 export const fetchMenuItems = async (): Promise<MenuItem[]> => {
   await simulateDelay(500);
-  return JSON.parse(JSON.stringify(DB.menuItemsDB));
+  return JSON.parse(JSON.stringify(menuItemsDB));
 };
 
 export const updateMenuItem = async (updatedItem: MenuItem): Promise<MenuItem[]> => {
   await simulateDelay(300);
-  const index = DB.menuItemsDB.findIndex((item: MenuItem) => item.id === updatedItem.id);
-  if (index !== -1) {
-    DB.menuItemsDB[index] = updatedItem;
-    saveMenuDB();
-  }
-  return JSON.parse(JSON.stringify(DB.menuItemsDB));
+  menuItemsDB = menuItemsDB.map((item: MenuItem) => item.id === updatedItem.id ? updatedItem : item);
+  saveMenuDB();
+  return JSON.parse(JSON.stringify(menuItemsDB));
 };
 
 export const addMenuItem = async (newItemData: Omit<MenuItem, 'id'>): Promise<MenuItem[]> => {
   await simulateDelay(300);
   const newItem: MenuItem = {
     ...newItemData,
-    id: DB.menuItemsDB.length > 0 ? Math.max(...DB.menuItemsDB.map((item: MenuItem) => item.id)) + 1 : 1,
+    id: menuItemsDB.length > 0 ? Math.max(...menuItemsDB.map((item: MenuItem) => item.id)) + 1 : 1,
   };
-  DB.menuItemsDB.push(newItem);
+  menuItemsDB.push(newItem);
   saveMenuDB();
-  return JSON.parse(JSON.stringify(DB.menuItemsDB));
+  return JSON.parse(JSON.stringify(menuItemsDB));
 };
 
-// FIX: Added placeOrder function to simulate order placement for the checkout page.
-export const placeOrder = async (
-  items: CartItem[],
-  user: User,
-  paymentMethod: 'COD' | 'Online',
-  total: number
-): Promise<{ success: boolean; orderId?: string }> => {
-  await simulateDelay(1000); // Simulate network latency
-  console.log('Order placed:', {
-    user: user.username,
-    items: items.map(i => `${i.item.name} x${i.quantity}`),
-    total,
-    paymentMethod,
-  });
-  // In a real app, this would save to a database and return a real order ID.
-  return { success: true, orderId: `HC-${Date.now()}` };
-};
-
-export const deleteMenuItem = async (itemId: number): Promise<MenuItem[]> => {
+export const deleteMenuItem = async (itemId: number): Promise<{ success: boolean }> => {
     await simulateDelay(300);
-    const index = DB.menuItemsDB.findIndex((item: MenuItem) => item.id === itemId);
-    if (index !== -1) {
-        DB.menuItemsDB.splice(index, 1);
-        saveMenuDB();
+    const initialLength = menuItemsDB.length;
+    menuItemsDB = menuItemsDB.filter((item: MenuItem) => item.id !== itemId);
+    if (menuItemsDB.length === initialLength) {
+        throw new Error("Menu item not found to delete.");
     }
-    return JSON.parse(JSON.stringify(DB.menuItemsDB));
+    saveMenuDB();
+    return { success: true };
 };
 
 // --- CONTACT INFO API ---
-
 export const updateContactInfo = async (newInfo?: ContactInfo): Promise<ContactInfo> => {
-    await simulateDelay(200);
-    if (newInfo) {
-      DB.contactInfoDB = { ...newInfo };
-      saveContactInfoDB();
-    }
-    return JSON.parse(JSON.stringify(DB.contactInfoDB));
+  await simulateDelay(300);
+  if (newInfo) {
+    contactInfoDB = { ...newInfo };
+    saveContactInfoDB();
+  }
+  return JSON.parse(JSON.stringify(contactInfoDB));
+};
+
+// --- ORDER API ---
+export const fetchOrders = async (): Promise<Order[]> => {
+    await simulateDelay(500);
+    return JSON.parse(JSON.stringify(ordersDB)).sort((a: Order, b: Order) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+};
+
+export const placeOrder = async (cartItems: CartItem[], user: User, paymentMethod: string, totalAmount: number): Promise<{ success: boolean; orderId: string }> => {
+  await simulateDelay(1000);
+  
+  const newOrder: Order = {
+    id: `HC-${Date.now()}`,
+    user,
+    items: cartItems,
+    totalAmount,
+    paymentMethod,
+    status: OrderStatus.Placed,
+    timestamp: new Date().toISOString(),
+  };
+  
+  ordersDB.push(newOrder);
+  saveOrdersDB();
+
+  console.log('Placing order:', newOrder);
+  
+  if (user.mobileNumber) {
+      console.log(`Simulating SMS to ${user.mobileNumber}: Your order ${newOrder.id} is confirmed!`);
+      // In a real app, this alert would be replaced by a toast notification.
+      alert(`Order Confirmed!\nA confirmation SMS has been sent to ${user.mobileNumber}.`);
+  }
+  return { success: true, orderId: newOrder.id };
+};
+
+export const updateOrderStatus = async (orderId: string, status: OrderStatus): Promise<Order[]> => {
+    await simulateDelay(300);
+    ordersDB = ordersDB.map((order: Order) => order.id === orderId ? { ...order, status } : order);
+    saveOrdersDB();
+    return JSON.parse(JSON.stringify(ordersDB)).sort((a: Order, b: Order) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 };

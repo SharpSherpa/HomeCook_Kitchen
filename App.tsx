@@ -1,17 +1,22 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Page, UserRole, User, ContactInfo, MenuItem as MenuItemType } from './types';
-import { fetchMenuItems, updateContactInfo as apiUpdateContactInfo, updateMenuItem as apiUpdateMenuItem, addMenuItem as apiAddMenuItem, loginUser } from './services/api';
-import Header from './components/Header';
-import Footer from './components/Footer';
-import HomePage from './components/pages/HomePage';
-import MenuPage from './components/pages/MenuPage';
-import PayPage from './components/pages/PayPage';
-import AdminDashboard from './components/pages/AdminDashboard';
-import LoginModal from './components/LoginModal';
-import Spinner from './components/Spinner';
+import { Page, UserRole, User, ContactInfo, MenuItem as MenuItemType, Order } from './types.ts';
+import { fetchMenuItems, updateContactInfo as apiUpdateContactInfo, updateMenuItem as apiUpdateMenuItem, addMenuItem as apiAddMenuItem, loginUser, registerUser, fetchOrders, deleteMenuItem as apiDeleteMenuItem, updateOrderStatus as apiUpdateOrderStatus, fetchAllUsers, addAdminUser, deleteUser } from './services/api.ts';
+import Header from './components/Header.tsx';
+import Footer from './components/Footer.tsx';
+import HomePage from './components/pages/HomePage.tsx';
+import MenuPage from './components/pages/MenuPage.tsx';
+import CheckoutPage from './components/pages/CheckoutPage.tsx';
+import OrderSuccessPage from './components/pages/OrderSuccessPage.tsx';
+import AdminDashboard from './components/pages/AdminDashboard.tsx';
+import CartView from './components/pages/CartView.tsx';
+import LoginModal from './components/LoginModal.tsx';
+import { useCart } from './hooks/useCart.tsx';
+import Spinner from './components/Spinner.tsx';
 
 // Custom hook to get the previous value of a state or prop
 const usePrevious = <T,>(value: T): T | undefined => {
+  // FIX: `useRef` requires an initial value. Provide `undefined` and update the generic type.
   const ref = useRef<T | undefined>(undefined);
   useEffect(() => {
     ref.current = value;
@@ -25,51 +30,42 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [contactInfo, setContactInfo] = useState<ContactInfo | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItemType[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-
-  const headerRef = useRef<HTMLElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
-
+  const { isCartOpen, closeCart } = useCart();
+  
   const isAdmin = user?.role === UserRole.Admin || user?.role === UserRole.RootAdmin;
+  const isRootAdmin = user?.role === UserRole.RootAdmin;
 
   const prevUser = usePrevious(user);
 
-  useEffect(() => {
-    const observer = new ResizeObserver(entries => {
-      for (let entry of entries) {
-        setHeaderHeight(entry.target.getBoundingClientRect().height);
-      }
-    });
-
-    if (headerRef.current) {
-      observer.observe(headerRef.current);
-    }
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-  
   useEffect(() => {
     const savedUser = localStorage.getItem('homecook-user');
     const parsedUser = savedUser ? JSON.parse(savedUser) : null;
     if (parsedUser) {
       setUser(parsedUser);
+      if (parsedUser.role === UserRole.RootAdmin) {
+        fetchAllUsers().then(setAllUsers);
+      }
     }
 
     Promise.all([
       fetchMenuItems(),
-      apiUpdateContactInfo(), // This also fetches initial info
-    ]).then(([items, info]) => {
+      apiUpdateContactInfo(),
+      fetchOrders(),
+    ]).then(([items, info, fetchedOrders]) => {
       setMenuItems(items);
       setContactInfo(info);
+      setOrders(fetchedOrders);
       setIsLoading(false);
     });
     
   }, []);
 
   const navigateTo = useCallback((page: Page, sectionId?: string) => {
+    closeCart();
     if (page === currentPage && !sectionId) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -87,34 +83,62 @@ const App: React.FC = () => {
             window.scrollTo(0, 0);
         }
     }, 50);
-  }, [currentPage]);
+  }, [closeCart, currentPage]);
   
   // This effect handles navigation AFTER a successful login to avoid race conditions.
   useEffect(() => {
+    // We only want to react to the user logging IN (prevUser is undefined/null, user is not)
     if (!prevUser && user) {
       const userIsAdmin = user.role === UserRole.Admin || user.role === UserRole.RootAdmin;
       if (userIsAdmin) {
+        // The user state is confirmed, NOW we can safely navigate to the admin page.
         navigateTo(Page.Admin);
       }
     }
   }, [user, prevUser, navigateTo]);
 
-  // This effect acts as a ROUTE GUARD, protecting admin page from unauthorized access.
+  // This effect acts as a ROUTE GUARD, protecting pages from unauthorized access.
   useEffect(() => {
     if (isLoading) return;
 
+    if (currentPage === Page.Checkout && !user) {
+        navigateTo(Page.Menu);
+        setIsLoginModalOpen(true);
+    }
+
+    // If the current page is Admin but the (now updated) user is NOT an admin, redirect home.
     if (currentPage === Page.Admin && !isAdmin) {
         navigateTo(Page.Home);
     }
-  }, [currentPage, isAdmin, isLoading, navigateTo]);
+  }, [currentPage, isAdmin, isLoading, navigateTo, user]);
 
 
-  const handleAdminLoginAttempt = async (username: string, password: string): Promise<string | void> => {
-    const result = await loginUser(username, password);
+  const handleAuthAttempt = async (mode: 'login' | 'signup', mobileNumber: string, password: string): Promise<string | void> => {
+    const ADMIN_PASSWORD_CLIENT = 'AdMin786@12';
+    let result: { user: User | null; error?: string };
+
+    // Smartly handle users trying to sign up with admin credentials.
+    // This prevents creating a customer account with the admin password and instead logs them in.
+    if (mode === 'signup' && password === ADMIN_PASSWORD_CLIENT) {
+        result = await loginUser(mobileNumber, password);
+         // Provide a specific error if the login fails, guiding the user.
+        if (result.error) {
+            return `Admin login failed. Please ensure you are using the correct admin mobile number.`;
+        }
+    } else if (mode === 'login') {
+      result = await loginUser(mobileNumber, password);
+    } else {
+      result = await registerUser(mobileNumber, password);
+    }
 
     if (result.user) {
-        setUser(result.user);
+        setUser(result.user); // This state change triggers the navigation useEffect above.
         localStorage.setItem('homecook-user', JSON.stringify(result.user));
+        
+        if (result.user.role === UserRole.RootAdmin) {
+          fetchAllUsers().then(setAllUsers);
+        }
+        
         setIsLoginModalOpen(false);
     } else {
         return result.error || "An unknown error occurred.";
@@ -123,6 +147,7 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     setUser(null);
+    setAllUsers([]);
     localStorage.removeItem('homecook-user');
     navigateTo(Page.Home);
   };
@@ -133,20 +158,8 @@ const App: React.FC = () => {
   };
   
   const handleUpdateMenuItem = async (updatedItem: MenuItemType) => {
-    const originalMenuItems = menuItems;
-    // Optimistically update the UI for an instant feel
-    setMenuItems(prevItems => prevItems.map(item => item.id === updatedItem.id ? updatedItem : item));
-    try {
-        // Update in the backend
-        const newItems = await apiUpdateMenuItem(updatedItem);
-        // Resync with the "DB" state to ensure consistency
-        setMenuItems(newItems);
-    } catch (error) {
-        console.error("Failed to update item:", error);
-        // Rollback on error
-        setMenuItems(originalMenuItems);
-        alert("Failed to update item. Please try again.");
-    }
+    const newItems = await apiUpdateMenuItem(updatedItem);
+    setMenuItems(newItems);
   };
   
   const handleAddMenuItem = async (newItem: Omit<MenuItemType, 'id'>) => {
@@ -154,16 +167,73 @@ const App: React.FC = () => {
     setMenuItems(newItems);
   };
 
-  const renderContent = () => {
+  const handleDeleteMenuItem = async (itemId: number) => {
+    try {
+        await apiDeleteMenuItem(itemId);
+        setMenuItems(prevItems => prevItems.filter(item => item.id !== itemId));
+    } catch (error) {
+        console.error("Error in App.tsx -> handleDeleteMenuItem:", error);
+        throw error; // Re-throw the error for the UI component to handle
+    }
+  };
+
+  const handleUpdateOrderStatus = async (orderId: string, status: Order['status']) => {
+    const updatedOrders = await apiUpdateOrderStatus(orderId, status);
+    setOrders(updatedOrders);
+  };
+  
+  const handleAddAdmin = async (mobileNumber: string, password: string): Promise<void> => {
+    try {
+        const updatedUsers = await addAdminUser(mobileNumber, password);
+        setAllUsers(updatedUsers);
+    } catch (error) {
+        console.error("Error in App.tsx -> handleAddAdmin:", error);
+        throw error; // Re-throw the error for the UI component to handle
+    }
+  };
+    
+  const handleDeleteUser = async (mobileNumber: string): Promise<void> => {
+    try {
+        await deleteUser(mobileNumber);
+        setAllUsers(prevUsers => prevUsers.filter(user => user.mobileNumber !== mobileNumber));
+    } catch (error) {
+        console.error("Error in App.tsx -> handleDeleteUser:", error);
+        throw error; // Re-throw the error for the UI component to handle
+    }
+  };
+
+  const handleDeleteOwnAccount = async () => {
+    if (user && window.confirm("Are you sure you want to permanently delete your account? This action cannot be undone.")) {
+        try {
+            await deleteUser(user.mobileNumber);
+            handleLogout();
+            alert("Your account has been successfully deleted.");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "An unknown error occurred.";
+            alert(`Error: ${message}`);
+        }
+    }
+  };
+
+  const renderPage = () => {
     if (isLoading || !contactInfo) return <div className="flex justify-center items-center h-screen"><Spinner /></div>;
 
     switch (currentPage) {
       case Page.Home:
         return <HomePage onOrderNow={() => navigateTo(Page.Menu)} featuredItems={menuItems.slice(0, 4)} contactInfo={contactInfo} />;
       case Page.Menu:
-        return <MenuPage menuItems={menuItems} isLoading={isLoading} headerHeight={headerHeight} />;
-      case Page.Pay:
-        return <PayPage contactInfo={contactInfo} />;
+        return <MenuPage menuItems={menuItems} isLoading={isLoading} />;
+      case Page.Checkout:
+        if (!user) {
+          // The route guard will redirect, but show a spinner in the meantime.
+          return <div className="flex justify-center items-center h-screen"><Spinner /></div>;
+        }
+        return <CheckoutPage onOrderSuccess={() => {
+            navigateTo(Page.OrderSuccess);
+            fetchOrders().then(setOrders); // Re-fetch orders after a new one is placed
+        }} user={user} />;
+      case Page.OrderSuccess:
+        return <OrderSuccessPage onBackToMenu={() => navigateTo(Page.Menu)} />;
       case Page.Admin:
         if (!isAdmin) {
           // The route guard will redirect, but show a spinner in the meantime.
@@ -173,9 +243,16 @@ const App: React.FC = () => {
           <AdminDashboard 
             menuItems={menuItems}
             contactInfo={contactInfo}
+            orders={orders}
             onUpdateContactInfo={handleUpdateContactInfo}
             onUpdateMenuItem={handleUpdateMenuItem}
             onAddMenuItem={handleAddMenuItem}
+            onDeleteMenuItem={handleDeleteMenuItem}
+            onUpdateOrderStatus={handleUpdateOrderStatus}
+            users={allUsers}
+            isRootAdmin={isRootAdmin}
+            onAddAdmin={handleAddAdmin}
+            onDeleteUser={handleDeleteUser}
           />
         );
       default:
@@ -184,20 +261,22 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col relative">
+    <div className="min-h-screen flex flex-col">
       <Header 
-        ref={headerRef}
         user={user} 
         onOpenLoginModal={() => setIsLoginModalOpen(true)}
+        // FIX: Cannot find name 'onLogout'. Changed to use the defined handleLogout function.
         onLogout={handleLogout}
         onNavigate={navigateTo}
         isAdmin={isAdmin}
+        onDeleteOwnAccount={handleDeleteOwnAccount}
       />
-      <main className="flex-grow" style={{ paddingTop: `${headerHeight}px` }}>
-        {renderContent()}
+      <main className="flex-grow">
+        {renderPage()}
       </main>
       {contactInfo && <Footer contactInfo={contactInfo} onNavigate={navigateTo} />}
-      {isLoginModalOpen && <LoginModal onClose={() => setIsLoginModalOpen(false)} onAuthAttempt={handleAdminLoginAttempt} />}
+      {isCartOpen && <CartView onCheckout={() => navigateTo(Page.Checkout)} onBrowseMenu={() => navigateTo(Page.Menu)} />}
+      {isLoginModalOpen && <LoginModal onClose={() => setIsLoginModalOpen(false)} onAuthAttempt={handleAuthAttempt} />}
     </div>
   );
 };

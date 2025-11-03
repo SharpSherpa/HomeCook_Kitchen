@@ -1,7 +1,8 @@
+
 import React from 'react';
-import { MenuItem, ContactInfo } from '../../types';
-import Button from '../Button';
-import MenuItemCard from '../MenuItemCard';
+import { MenuItem, ContactInfo } from '../../types.ts';
+import Button from '../Button.tsx';
+import MenuItemCard from '../MenuItemCard.tsx';
 
 interface HomePageProps {
   onOrderNow: () => void;

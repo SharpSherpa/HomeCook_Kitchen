@@ -1,6 +1,10 @@
+
 import React from 'react';
-import { MenuItem, MenuItemStatus } from '../types';
-import { IconClose } from '../constants';
+import { MenuItem, MenuItemStatus } from '../types.ts';
+import { useCart } from '../hooks/useCart.tsx';
+import Button from './Button.tsx';
+import QuantityControl from './QuantityControl.tsx';
+import { IconClose } from '../constants.tsx';
 
 interface MenuItemDetailModalProps {
   item: MenuItem;
@@ -8,6 +12,8 @@ interface MenuItemDetailModalProps {
 }
 
 const MenuItemDetailModal: React.FC<MenuItemDetailModalProps> = ({ item, onClose }) => {
+  const { cartItems, addItem, updateQuantity } = useCart();
+  const cartItem = cartItems.find(ci => ci.item.id === item.id);
   const isAvailable = item.status === MenuItemStatus.Available;
 
   return (
@@ -34,11 +40,24 @@ const MenuItemDetailModal: React.FC<MenuItemDetailModalProps> = ({ item, onClose
           <p className="text-gray-600 dark:text-gray-400 flex-grow mb-6">{item.description}</p>
           
           <div className="mt-auto flex justify-between items-center">
-            <span className="text-3xl font-bold text-gray-800 dark:text-gray-200">₹ {item.price.toFixed(2)}</span>
+            <span className="text-3xl font-bold text-gray-800 dark:text-gray-200">₹{item.price.toFixed(2)}</span>
             
-            <span className={`px-4 py-2 text-base font-semibold rounded-md ${isAvailable ? 'text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900' : 'text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900'}`}>
-                {isAvailable ? 'Currently Available' : 'Currently Unavailable'}
-            </span>
+            {isAvailable ? (
+                cartItem ? (
+                    <QuantityControl
+                        quantity={cartItem.quantity}
+                        onIncrease={() => updateQuantity(item.id, cartItem.quantity + 1)}
+                        onDecrease={() => updateQuantity(item.id, cartItem.quantity - 1)}
+                        size="large"
+                    />
+                ) : (
+                    <Button onClick={() => addItem(item)} className="px-6 py-3 text-base">
+                        Add to Cart
+                    </Button>
+                )
+            ) : (
+                <span className="px-6 py-3 text-base font-semibold text-white bg-gray-500 rounded-md">Unavailable</span>
+            )}
           </div>
         </div>
       </div>
